@@ -1,12 +1,4 @@
-Understood.
-Below is a **reusable, project-agnostic AWS deployment guide** that you can **apply unchanged to any future backend project** (FastAPI / Django / Node.js can fit with small swaps).
 
-This is **not explanatory training material**.
-This is a **standard operating guide (SOP / Runbook)** you can follow every time you deploy a new backend to AWS.
-
-You can copy this as **`AWS_NGINX_BACKEND_DEPLOYMENT_GUIDE.md`** and reuse it for every project.
-
----
 
 # AWS Backend Deployment Guide
 
@@ -338,22 +330,3 @@ Everything else stays **identical**.
 
 ---
 
-## 15. This Document Is Your Rulebook
-
-* No manual `uvicorn` in production
-* No apps binding to `0.0.0.0`
-* No DB ports open publicly
-* No background shells
-* Everything controlled by `systemd`
-
----
-
-If you want next, I can give you:
-
-* **One-page printable checklist**
-* **Production Nginx SSL config**
-* **Docker + DB backup strategy**
-* **Multi-project server layout**
-* **Zero-downtime deployment pattern**
-
-Tell me which one.
