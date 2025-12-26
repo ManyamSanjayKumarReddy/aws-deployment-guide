@@ -14,7 +14,8 @@
 | Cloud           | AWS EC2                            |
 | Reverse Proxy   | Nginx                              |
 | Process Manager | systemd                            |
-| App Runtime     | Python / Node / Any                |
+| App Runtime     | Python (FastAPI / Uvicorn)         |
+| Containers      | Docker (host-level)                |
 | DB              | Dockerized (Postgres / MySQL etc.) |
 | App Binding     | `127.0.0.1:<PORT>`                 |
 
@@ -65,25 +66,8 @@ python3 --version
 ## 3. Docker Installation (Standard Runtime Layer)
 
 ```bash
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-  -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-```
-
-```bash
-tee /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME}")
-Components: stable
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-```
-
-```bash
 apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+apt install -y docker.io
 systemctl enable --now docker
 ```
 
@@ -103,25 +87,20 @@ docker ps
 /var/www/vhosts/<PROJECT_NAME>
 ```
 
-Create:
+Create and clone:
 
 ```bash
 mkdir -p /var/www/vhosts
 cd /var/www/vhosts
-```
-
-Clone project:
-
-```bash
 git clone <REPO_URL> <PROJECT_NAME>
 cd <PROJECT_NAME>
 ```
 
 ---
 
-## 5. Application Environment Setup (Template)
+## 5. Application Environment Setup (Python / FastAPI)
 
-### 5.1 Python Example
+### 5.1 Virtual Environment
 
 ```bash
 python3 -m venv .venv
@@ -161,7 +140,7 @@ Rules:
 
 ---
 
-## 7. systemd Service (Mandatory for All Projects)
+## 7. systemd Service (PRODUCTION-READY, FINAL)
 
 ### 7.1 Service File
 
@@ -171,23 +150,34 @@ Path:
 /etc/systemd/system/<PROJECT>.service
 ```
 
-Template:
+### **Authoritative Template (Use This Exactly)**
 
 ```ini
 [Unit]
-Description=<PROJECT> Backend Service
+Description=<PROJECT> Backend FastAPI Service
 After=network.target docker.service
 
 [Service]
 User=www-data
 Group=www-data
 WorkingDirectory=/var/www/vhosts/<PROJECT>
-EnvironmentFile=/var/www/vhosts/<PROJECT>/.env
-ExecStart=/var/www/vhosts/<PROJECT>/.venv/bin/python \
-  -m uvicorn main:app \
+
+# ---- PATH IS CRITICAL (systemd does NOT load shell env) ----
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/var/www/vhosts/<PROJECT>/.venv/bin
+
+# ---- Start Command ----
+ExecStart=/var/www/vhosts/<PROJECT>/.venv/bin/uvicorn \
+  agent_v1.api.main:app \
   --host 127.0.0.1 \
-  --port 8000
-Restart=always
+  --port 8000 \
+  --log-level info
+
+# ---- Logging ----
+StandardOutput=append:/var/log/<PROJECT>.out.log
+StandardError=append:/var/log/<PROJECT>.err.log
+
+Restart=on-failure
 RestartSec=5
 
 [Install]
@@ -220,6 +210,8 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -236,17 +228,15 @@ systemctl restart nginx
 
 ---
 
-## 9. SSL (Always Do After DNS)
+## 9. SSL (After DNS)
 
 ```bash
 certbot certonly -d <DOMAIN>
 ```
 
-(Optional: convert to full HTTPS redirect later.)
-
 ---
 
-## 10. Permissions & Runtime Access
+## 10. Permissions & Runtime Access (MANDATORY)
 
 ### 10.1 File Ownership
 
@@ -255,7 +245,7 @@ chown -R www-data:www-data /var/www/vhosts/<PROJECT>
 chmod -R 755 /var/www/vhosts/<PROJECT>
 ```
 
-### 10.2 Docker Access
+### 10.2 Docker Access for Backend
 
 ```bash
 usermod -aG docker www-data
@@ -270,9 +260,16 @@ sudo -u www-data docker ps
 
 ---
 
-## 11. Logs & Monitoring (Standard Commands)
+## 11. Logs & Debugging (Daily Use)
 
-### App Logs
+### Application Logs
+
+```bash
+tail -f /var/log/<PROJECT>.out.log
+tail -f /var/log/<PROJECT>.err.log
+```
+
+### systemd Logs
 
 ```bash
 journalctl -u <PROJECT> -f
@@ -282,12 +279,6 @@ journalctl -u <PROJECT> -f
 
 ```bash
 tail -f /var/log/nginx/*.log
-```
-
-### Port Validation
-
-```bash
-netstat -tulnp
 ```
 
 ---
@@ -303,30 +294,30 @@ netstat -tulnp
 
 ---
 
-## 13. Mandatory Checklist (Before Go-Live)
+## 13. Mandatory Pre-Production Checklist
 
-| Check                     | Status |
-| ------------------------- | ------ |
-| App runs on localhost     | ☐      |
-| Nginx proxies correctly   | ☐      |
-| systemd enabled           | ☐      |
-| Docker auto-start enabled | ☐      |
-| SSL issued                | ☐      |
-| DB not public             | ☐      |
+| Check                               | Status |
+| ----------------------------------- | ------ |
+| App runs on `127.0.0.1`             | ☐      |
+| systemd service stable              | ☐      |
+| Docker accessible from backend user | ☐      |
+| Nginx proxy works                   | ☐      |
+| SSL valid                           | ☐      |
+| No public DB ports                  | ☐      |
 
 ---
 
-## 14. How You Reuse This
+## 14. Reuse Rule (Very Important)
 
-For **every new project**, you only change:
+For every **new backend**, you only change:
 
-* `<PROJECT_NAME>`
+* `<PROJECT>`
 * `<REPO_URL>`
 * `<DOMAIN>`
-* App start command
+* App import path in `ExecStart`
 * Database credentials
 
-Everything else stays **identical**.
+Everything else **must remain identical**.
 
 ---
 
